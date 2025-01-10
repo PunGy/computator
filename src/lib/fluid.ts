@@ -2,63 +2,13 @@
  * Reactive system libary
  */
 
-/** Usage
-
-const a = Fluid.val(10)
-
-Fuild.read(a) // 10
-
-Fluid.write(a, 20) // 20
-
-const b = Fluid.derive(a, val => val + 10);
-
-Fluid.read(b) // 30
-
-Fluid.write(a, 30)
-Fluid.read(b) // 40
-
-const c = Fluid.derive(a, _a => Fluid.derive(b, _b => _a + _b))
-
-Fluid.read(c) // 30 + 40 => 70
-
-Fluid.listen(c, val => {
-  console.log('c updated with: ', val)
-})
-
-Fluid.write(a, 0) // console.log( c updated with: 10 )
-
-const name = Fluid.val("Max")
-const surname = Fluid.val("Jacoblion")
-
-const fullname = Fluid.derive(name, _name => Fluid.derive(surname, _surname => {
-  // Skip when name is not Max
-  if (_name !== "Max") {
-    return Fluid.skip
-  }
-  return _name + " " + _surname
-}))
-
-Fluid.listen(fullname, (_fullname) => {
-  console.log(_fullname)
-})
-
-Fluid.write(surname, "Yakovlev") // logs: Max Yakovlev
-Fluid.write(name, "Mia") // nothing logged
-
-Fluid.read(fullname) // Max Yakovlev
-
-Fluid.write(surname, "JJ") // logs: Mia JJ
- */
-
 /** API
-
 Fluid
   - val: create a reactive value
   - read: read content of reactive value
   - write: write to reactive value
   - derive: make a deriviation of reactive value
             the result is DeriviationValue, which is immutable (cannot be used with write)
-    - skip(TODO): special contant symbol for the derive value which indicates the computation might be ignored
   - listen: like `derive`, but proactive and returns "shutdown" as the result
  */
 
@@ -73,27 +23,30 @@ export interface ReactiveValue<V> {
   listeners: Map<unknown, Message>;
 }
 
-export interface ReactiveDeriviation<V> {
+export interface ReactiveDerivation<V> {
   __tag: typeof _rDerive;
   listeners: Map<unknown, Message>;
 }
 
-export type Reactive<V> = ReactiveValue<V> | ReactiveDeriviation<V>
+export type Reactive<V = unknown> = ReactiveValue<V> | ReactiveDerivation<V>
 
 interface _ReactiveValue<V> extends ReactiveValue<V> {
   value: V;
 }
 
-interface _ReactiveDeriviation<V> extends ReactiveDeriviation<V> {
+interface _ReactiveDerivation<V> extends ReactiveDerivation<V> {
   _invalidate(): void;
   value(): V;
 }
 
-
-function isVal<V>(_value_: Reactive<V>): _value_ is _ReactiveValue<V> {
+function isVal<V>(_value_: Reactive<V>): _value_ is _ReactiveValue<V>
+function isVal(smth: unknown): false
+function isVal<V>(_value_: Reactive<V> | any): _value_ is _ReactiveValue<V> {
   return typeof _value_ === "object" && _value_ !== null && "__tag" in _value_ && _value_.__tag === _rVal
 }
-function isDerive<V>(_value_: Reactive<V>): _value_ is _ReactiveDeriviation<V> {
+function isDerive<V>(_value_: Reactive<V>): _value_ is _ReactiveDerivation<V>
+function isDerive(smth: unknown): false
+function isDerive<V>(_value_: Reactive<V> | any): _value_ is _ReactiveDerivation<V> {
   return typeof _value_ === "object" && _value_ !== null && "__tag" in _value_ && _value_.__tag === _rDerive
 }
 
@@ -109,30 +62,59 @@ const read = <V>(_reactive_: Reactive<V>): V => {
 }
 
 const notify = (listeners: Map<unknown, Message>) => {
-  listeners.forEach(message => {
+  listeners.forEach((message) => {
     message()
   })
 }
 
-function expandValue<V>(_val_: ReactiveValue<V>): asserts _val_ is _ReactiveValue<V> {}
-function expandDerive<V>(_derive_: ReactiveDeriviation<V>): asserts _derive_ is _ReactiveDeriviation<V> {}
-
 const write = <V>(_value_: ReactiveValue<unknown>, newValue: V): ReactiveValue<V> => {
-  expandValue(_value_)
-  _value_.value = newValue
+  (_value_ as _ReactiveValue<V>).value = newValue
   notify(_value_.listeners)
   return _value_
 }
 
 type Unsub = () => void;
-const listen = <V>(_reactive_: Reactive<V>, fn: (value: V) => void): Unsub => {
+
+type ListenProps = {
+  immidiate?: boolean;
+}
+
+function listen<V>(
+  _reactive_: Reactive<V>,
+  fn: (value: V) => void,
+  props?: ListenProps
+): Unsub
+function listen<Vs extends any[]>(
+  _reactive_: { [K in keyof Vs]: Reactive<Vs[K]> },
+  fn: (...values: Vs) => void,
+  props?: ListenProps,
+): Unsub
+function listen<V>(
+  _reactive_: Reactive<V> | Reactive<any>[],
+  fn: ((value: V) => void) | ((...values: any[]) => void),
+  props?: ListenProps,
+): Unsub {
+  const sources = Array.isArray(_reactive_) ? _reactive_ : [_reactive_]
+
   function unsub() {
-    _reactive_.listeners.delete(unsub)
+    sources.forEach( source => source.listeners.delete(unsub))
   }
-  _reactive_.listeners.set(unsub, () => fn(read(_reactive_)))
+  const react = () => sources.length > 1
+    ? (fn as (...values: any[]) => void)(...sources.map(source => read(source)))
+    : fn(read(sources[0]))
+
+  sources.forEach(source => source.listeners.set(unsub, react))
+
+  if (props?.immidiate) {
+    react()
+  }
 
   return unsub
 }
+
+//////////////
+// Values
+//////////////
 
 const nullCache = Symbol("nullCache")
 
@@ -142,39 +124,44 @@ const val = <V>(value: V): ReactiveValue<V> => ({
   listeners: new Map(),
 }) as _ReactiveValue<V>
 
-const derive = <V, V2>(
+function derive<V, V2>(
   _value_: Reactive<V>,
-  fn: (value: V) => V2 | ReactiveDeriviation<V2>,
-): ReactiveDeriviation<V2> => {
+  fn: (value: V) => V2,
+): ReactiveDerivation<V2>
+function derive<Vs extends any[], V2>(
+  _values_: { [K in keyof Vs]: Reactive<Vs[K]> },
+  fn: (...values: Vs) => V2
+): ReactiveDerivation<V2>;
+function derive<V, V2>(
+  _v_: Reactive<V> | Reactive<any>[],
+  fn: ((value: V) => V2) | ((...values: any[]) => V2),
+): ReactiveDerivation<V2> {
   let cache: (typeof nullCache) | V2 = nullCache
 
-  const derived: _ReactiveDeriviation<V2> = {
+  const sources = Array.isArray(_v_) ? _v_ : [_v_]
+
+  const derived: _ReactiveDerivation<V2> = {
     __tag: _rDerive,
     _invalidate() {
       cache = nullCache
       notify(this.listeners)
     },
     listeners: new Map(),
-    // @ts-expect-error some bullshit again
     value() {
       if (cache !== nullCache) {
         return cache
       }
 
-      let result = fn(read(_value_))
-
-      // @ts-expect-error fucking piece of crap
-      while (isDerive(result)) {
-        result.listeners.set(this, this._invalidate.bind(this))
-        result = read(result)
-      }
+      const result = sources.length > 1
+        ? (fn as ((...values: any[]) => V2))(...sources.map(_reactive_ => read(_reactive_)))
+        : fn(read(sources[0]))
 
       cache = result as V2
       return result
     },
   }
 
-  _value_.listeners.set(derived, derived._invalidate.bind(derived))
+  sources.forEach(source => source.listeners.set(derived, derived._invalidate.bind(derived)))
 
   return derived
 }

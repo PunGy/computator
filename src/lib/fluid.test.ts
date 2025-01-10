@@ -1,17 +1,17 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, test, it, expect, vi } from "vitest"
 import { Fluid } from "./fluid"
 
 describe("Fluid", () => {
   describe("val", () => {
     it("creates a reactive value which can be readed", () => {
-      const a = Fluid.val(10)
-      expect(Fluid.read(a)).toBe(10)
+      const _a_ = Fluid.val(10)
+      expect(Fluid.read(_a_)).toBe(10)
     })
 
     it("able to modify the value", () => {
-      const a = Fluid.val(10)
-      Fluid.write(a, 20)
-      expect(Fluid.read(a)).toBe(20)
+      const _a_ = Fluid.val(10)
+      Fluid.write(_a_, 20)
+      expect(Fluid.read(_a_)).toBe(20)
     })
   })
 
@@ -55,7 +55,7 @@ describe("Fluid", () => {
     it("can have more than one dependency via currying", () => {
       const _name_ = Fluid.val("Max")
       const _surname_ = Fluid.val("Yakovlev")
-      const _fullName_ = Fluid.derive(_name_, name => Fluid.derive(_surname_, surname => `${name} ${surname}`))
+      const _fullName_ = Fluid.derive([_name_, _surname_], (name, surname) => `${name} ${surname}`)
 
       expect(Fluid.read(_fullName_)).toBe("Max Yakovlev")
 
@@ -73,22 +73,27 @@ describe("Fluid", () => {
       const _d_ = Fluid.val("d")
       const _e_ = Fluid.val("e")
 
-      const _sum_ = Fluid.derive(_a_, a => (
-        Fluid.derive(_b_, b => (
-          Fluid.derive(_c_, c => (
-            Fluid.derive(_d_, d => (
-              Fluid.derive(_e_, e => (
-                a + b + c + d + e
-              ))
-            ))
-          ))
-        ))
+      const _sum_ = Fluid.derive([_a_, _b_, _c_, _d_, _e_], (a, b, c, d, e) => (
+        a + b + c + d + e
       ))
 
       expect(Fluid.read(_sum_)).toBe("abcde")
 
       Fluid.write(_d_, "D")
       expect(Fluid.read(_sum_)).toBe("abcDe")
+    })
+
+    it("resolve race condition", () => {
+      const _x_ = Fluid.val("x")
+      const _X_ = Fluid.derive(_x_, x => x.toUpperCase())
+
+      const _xX_ = Fluid.derive([_x_, _X_], (x, X) => x + X)
+
+      expect(Fluid.read(_xX_)).toBe("xX")
+
+      Fluid.write(_x_, "a")
+
+      expect(Fluid.read(_xX_)).toBe("aA")
     })
   })
 
@@ -103,6 +108,16 @@ describe("Fluid", () => {
       expect(fn).toHaveBeenCalledWith(20)
     })
 
+    it("listen to multiple reactive values", () => {
+      const _x_ = Fluid.val(10)
+      const _y_ = Fluid.val(20)
+      const fn = vi.fn()
+
+      Fluid.listen([_x_, _y_], (x, y) => fn(x + y))
+
+      Fluid.write(_x_, 20)
+      expect(fn).toHaveBeenCalledWith(40)
+    })
 
     it("listen change of reactive deriviation", () => {
       const _x_ = Fluid.val(10)
@@ -115,5 +130,60 @@ describe("Fluid", () => {
       expect(fn).toHaveBeenCalledWith(40)
     })
   })
+
+  test("bunch", () => {
+    const _x_ = Fluid.val("x")
+    const _y_ = Fluid.val("y")
+
+    const _a_ = Fluid.derive([_x_, _y_], (x, y) => "a(" + x + y + ")")
+    const _b_ = Fluid.derive([_x_, _y_], (x, y) => "b(" + x + y + ")")
+
+    let answer
+    Fluid.listen(
+      Fluid.derive([_a_, _b_], (a, b) => [a, b]),
+      ([a, b]) => answer = a + ", " + b,
+      { immidiate: true },
+    )
+
+    expect(answer).toBe("a(xy), b(xy)")
+    expect(Fluid.read(_a_)).toBe("a(xy)")
+
+    Fluid.write(_x_, "[x]")
+
+    expect(answer).toBe("a([x]y), b([x]y)")
+    expect(Fluid.read(_a_)).toBe("a([x]y)")
+  })
+
+  //describe("High-Order derives", () => {
+  //  //it("reacts on _b_ only after change of _a_", () => {
+  //  //  const _a_ = Fluid.val("a")
+  //  //  const _b_ = Fluid.val("b")
+  //  //  const fn = vi.fn()
+  //  //
+  //  //  Fluid.listen(_a_, a => {
+  //  //    Fluid.write(_b_, Fluid.read(_b_) + a)
+  //  //  })
+  //  //
+  //  //  const _c_ = Fluid.derive(_a_, () => {
+  //  //    return Fluid.read(Fluid.derive(_b_, b => b))
+  //  //  })
+  //  //
+  //  //  Fluid.listen(_c_, fn, { immidiate: true })
+  //  //
+  //  //  expect(fn).toBeCalledWith("b")
+  //  //
+  //  //  fn.mockClear()
+  //  //
+  //  //  Fluid.write(_b_, "B")
+  //  //
+  //  //  expect(fn).not.toHaveBeenCalled()
+  //  //  expect(Fluid.read(_c_)).toBe("b")
+  //  //
+  //  //  Fluid.write(_a_, "A")
+  //  //
+  //  //  expect(fn).toBeCalledWith("AB")
+  //  //  expect(Fluid.read(_c_)).toBe("AB")
+  //  //})
+  //})
 })
 
