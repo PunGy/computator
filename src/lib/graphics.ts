@@ -1,73 +1,52 @@
 import { Either } from "./either"
 import { Fluid, Reactive, ReactiveValue } from "./fluid"
+import { flow } from "./function";
+
 interface XY {
   x: number;
   y: number;
 }
 
-interface GObject {
-  x: number;
-  y: number;
+interface GObjectOptions extends XY {
   color?: string;
-  relativeTo?: "screen"|"canvas";
+  relativeTo?: "screen"|"canvas"|GObjectOptions;
 }
+type GObject = Required<GObjectOptions>
 
-interface TextOptions extends GObject {
+interface TextOptions extends GObjectOptions {
   value: string;
-  align?: "left" | "center" | "right";
+
+  fontStyle?: string;
   fontSize?: number;
 }
-
-
-interface WithText {
-  text?: string;
-  textColor?: string;
-  fontSize?: number;
-}
-
-interface TextObject extends GObject {
+interface TextObject extends Required<TextOptions> {
   value: string;
   metrics: TextMetrics;
-  fontSize: number;
-  align: NonNullable<TextOptions["align"]>;
+  //align: Required<TextOptions["align"]>;
 }
 
 type ShapeStyle = "fill" | "stroke"
-
-interface RectProps extends GObject, WithText {
-  width?: number;
-  height?: number;
-  style?: ShapeStyle;
-}
-interface RectObject extends GObject {
+interface RectOptions extends GObjectOptions {
   width: number;
   height: number;
-  style: ShapeStyle;
-  textObject?: TextObject;
+  style?: ShapeStyle;
 }
+type RectObject = Required<RectOptions>
 
-interface CircleOptions extends GObject, WithText {
+interface CircleOptions extends GObjectOptions {
   radius: number;
   style: "fill" | "stroke";
 }
+type CircleObject = Required<CircleOptions>
 
-interface CircleObject extends GObject {
-  radius: number;
-  textObject?: ShapeStyle;
-}
-
-interface LineOptions extends Omit<GObject, "x" | "y"> {
+interface LineOptions extends Omit<GObjectOptions, "x" | "y"> {
   color: string;
   from: XY;
   to: XY;
   width?: number;
 }
-interface LineObject {
-  from: XY;
-  to: XY;
-  color: string;
-  width: number;
-}
+
+type LineObject = Required<LineOptions>
 
 type ArrowStyle = "target" | "none";
 
@@ -75,9 +54,12 @@ interface ArrowOptions extends LineOptions {
   beginStyle?: ArrowStyle;
   endStyle?: ArrowStyle;
 }
-interface ArrowObject extends LineObject {
-  beginStyle: ArrowStyle;
-  endStyle: ArrowStyle;
+
+type ArrowObject = Required<ArrowOptions>
+
+type ObjectController<O extends GObject> = {
+  info: O;
+  draw(): void;
 }
 
 export function graphics(
@@ -92,6 +74,7 @@ export function graphics(
   }
 
   const _offset_ = Fluid.val<XY>({ x: 0, y: 0 })
+  const _zoom_ = Fluid.val(1)
 
   const scale = window.devicePixelRatio
   Fluid.listen(
@@ -105,11 +88,69 @@ export function graphics(
   )
 
   // Scale/unscale pixel
-  const s = (px: number) => px * scale
-  const us = (px: number) => px / scale
+  const s = (px: number) => px * scale * Fluid.read(_zoom_)
+  const us = (px: number) => px / scale / Fluid.read(_zoom_)
 
   // Apply offset
   const fx = (x: number) => x - Fluid.read(_offset_).x
   const fy = (y: number) => y - Fluid.read(_offset_).y
+
+  // Composition
+  const sfx = flow(fx, s)
+  const sfy = flow(fy, s)
+
+  /**
+   * Apply all calculations to find target XY for painting
+   * If null, it means it can't be painted (e.g. out of the reach)
+   */
+  const ctxCoordiantes = (xy: XY, relative: GObject["relativeTo"]): XY | null => {
+    if ()
+  }
+
+  const clear = () => {
+    ctx.clearRect(0, 0, s(Fluid.read(_width_)), s(Fluid.read(_height_)))
+  }
+
+  const rect = (options: RectOptions): ObjectController<RectObject> => {
+    const {
+      x, y, width, height,
+      color = "black", style = "fill",
+      relativeTo,
+    } = options
+
+    return {
+      info: {
+        x, y,
+        width, height,
+        color, style,
+      },
+      draw() {
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(
+          normalizeXFor(this.info, props.screenRelative),
+          normalizeYFor(this.info, props.screenRelative),
+          s(width),
+          s(height),
+        )
+        if (style === "fill") {
+          ctx.fillStyle = color
+          ctx.fill()
+        } else {
+          ctx.strokeStyle = color
+          ctx.stroke()
+        }
+        ctx.restore()
+      },
+    }
+  }
+
+  return {
+    // properties
+    _offset_,
+
+    // methods
+    clear,
+  }
 }
 

@@ -22,13 +22,22 @@ type Priority = number | typeof priorities.lowest
 const priorities = {
   lowest: Symbol("lowest"),
   highest: 0,
-  before(_derived_: ReactiveDerivation<unknown>) {
-    const { priority, listeners } = (_derived_ as _ReactiveDerivation<unknown>)
+  before(p: ReactiveDerivation<unknown> | number | typeof this.lowest) {
+    if (p === this.lowest) {
+      console.warn("Fluid: Cannot use sole Fluid.priorities.lowest with Fluid.priorities.before! Use Fluid.derive as base or numerical value")
+      return this.lowest
+    }
+    if (typeof p === "number") return p - 1
+
+    const { priority, listeners } = (p as _ReactiveDerivation<unknown>)
     return priority === this.lowest ? listeners.lastIndex : (priority as number) - 1
   },
-  after(_derived_: ReactiveDerivation<unknown>) {
-    const priority = (_derived_ as _ReactiveDerivation<unknown>).priority
-    return priority === this.lowest ? priority : (priority as number) + 1
+  after(p: ReactiveDerivation<unknown> | number | typeof this.lowest) {
+    if (p === this.lowest) return p
+    if (typeof p === "number") return p + 1
+
+    const { priority, listeners } = (p as _ReactiveDerivation<unknown>)
+    return priority === this.lowest ? listeners.lastIndex : (priority as number) + 1
   },
 }
 
@@ -65,28 +74,36 @@ class PriorityPool extends SparseArray<Map<unknown, Message>> {
 
 // Utilities // Reactivity types
 
+// Public
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface ReactiveValue<V> {
   __tag: typeof _rVal;
-  listeners: PriorityPool;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface ReactiveDerivation<V> {
   __tag: typeof _rDerive;
-  listeners: PriorityPool;
 }
 
 export type Reactive<V = unknown> = ReactiveValue<V> | ReactiveDerivation<V>
 
+// Private
+
 interface _ReactiveValue<V> extends ReactiveValue<V> {
   value: V;
+  listeners: PriorityPool;
 }
 
 interface _ReactiveDerivation<V> extends ReactiveDerivation<V> {
   _invalidate(): void;
   _cache: (typeof nullCache) | V;
   priority: Priority;
+  listeners: PriorityPool;
   value(): V;
 }
+
+type _Reactive<V = unknown> = _ReactiveValue<V> | _ReactiveDerivation<V>
 
 // Utilities // Helpers
 
@@ -126,7 +143,7 @@ const write = <A, B>(_value_: ReactiveValue<A>, newValue: B | ((aVal: A) => B)):
   (_value_ as _ReactiveValue<B>).value = typeof newValue === "function"
     ? (newValue as ((aVal: A) => B))(read(_value_))
     : newValue
-  notify(_value_.listeners)
+  notify((_value_ as _ReactiveValue<B>).listeners)
   return _value_
 }
 
@@ -168,7 +185,9 @@ function derive<V, V2>(
   fn: ((value: V) => V2) | ((...values: any[]) => V2),
   props?: DeriveProps,
 ): ReactiveDerivation<V2> {
-  const sources = Array.isArray(_v_) ? _v_ : [_v_] as NonEmptyArray<Reactive<V>>
+  const sources = Array.isArray(_v_)
+    ? _v_ as NonEmptyArray<_Reactive<V>>
+    : [_v_] as NonEmptyArray<_Reactive<V>>
 
   const derived: _ReactiveDerivation<V2> = {
     __tag: _rDerive,
@@ -225,7 +244,9 @@ function listen<V>(
   fn: ((value: V) => void) | ((...values: any[]) => void),
   props?: ListenProps,
 ): Unsub {
-  const sources: NonEmptyArray<Reactive<V>> = Array.isArray(_reactive_) ? _reactive_ : [_reactive_]
+  const sources = Array.isArray(_reactive_)
+    ? _reactive_ as NonEmptyArray<_Reactive<V>>
+    : [_reactive_] as NonEmptyArray<_Reactive<V>>
 
   function unsub() {
     sources.forEach( source => {

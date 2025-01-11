@@ -18,7 +18,7 @@ describe("Fluid", () => {
   describe("derive", () => {
     it("creates deriviation based on the reactive val", () => {
       const _name_ = Fluid.val("Max")
-      const _greet_ = Fluid.derive([_name_], name => "Hello, " + name)
+      const _greet_ = Fluid.derive(_name_, name => "Hello, " + name)
 
       expect(Fluid.read(_greet_)).toBe("Hello, Max")
     })
@@ -171,22 +171,23 @@ describe("Fluid", () => {
 
       expect(Fluid.read(_g_)).toBe(true)
     })
-    it("reacts on _b_ only after change of _a_", () => {
+    it("read _b_ only after change of _a_", () => {
       const _a_ = Fluid.val("a")
       const _b_ = Fluid.val("b")
       const fn = vi.fn()
 
+      const _b_Priority = Fluid.priorities.highest
       const _c_ = Fluid.derive(_a_, () => {
         return Fluid.read(_b_)
         // Hapens second
-      }, { priority: Fluid.priorities.highest + 1 })
+      }, { priority: Fluid.priorities.after(_b_Priority) })
 
       Fluid.listen(_c_, fn, { immidiate: true })
 
       Fluid.listen(_a_, a => {
-        Fluid.write(_b_, a + Fluid.read(_b_))
+        Fluid.write(_b_, b => a + b)
         // Hapens first
-      }, { priority: Fluid.priorities.highest })
+      }, { priority: _b_Priority })
 
       expect(fn).toBeCalledWith("b")
 
