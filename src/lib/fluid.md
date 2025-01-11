@@ -1,3 +1,6 @@
+Example usage:
+
+```typescript
 import { Fluid, ReactiveValue } from "./lib/fluid.ts"
 
 type Item = {price: number, id: number}
@@ -63,3 +66,4 @@ Fluid.listen(
   price => discountPriceEl.innerText = price.toString(),
 )
 
+```

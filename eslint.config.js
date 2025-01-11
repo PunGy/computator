@@ -31,8 +31,7 @@ export default [
       "no-shadow": "off",
       "no-prototype-builtins": "off",
       "no-use-before-define": [
-        "error",
-        { functions: false, classes: false },
+        "off",
       ],
       "no-undef-init": "error",
       "array-bracket-newline": ["warn", "consistent"],
