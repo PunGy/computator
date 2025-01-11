@@ -91,9 +91,11 @@ export function graphics(
     return Either.left("Cannot create 2d context")
   }
 
+  const _offset_ = Fluid.val<XY>({ x: 0, y: 0 })
+
   const scale = window.devicePixelRatio
   Fluid.listen(
-    [_width_, _height_]
+    [_width_, _height_],
     (width, height) => {
       canvas.width = Math.floor(width * scale)
       canvas.height = Math.floor(height * scale)
@@ -102,5 +104,12 @@ export function graphics(
     },
   )
 
+  // Scale/unscale pixel
+  const s = (px: number) => px * scale
+  const us = (px: number) => px / scale
+
+  // Apply offset
+  const fx = (x: number) => x - Fluid.read(_offset_).x
+  const fy = (y: number) => y - Fluid.read(_offset_).y
 }
 
