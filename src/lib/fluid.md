@@ -45,7 +45,6 @@ listEl.addEventListener("click", (e) => {
   const elId = e.target?.id
   if (elId && elId.startsWith("item")) {
     const id = parseInt(elId.slice("item-".length), 10)
-    console.log(elId)
     removeFromCart(id)
   }
 })

@@ -1,4 +1,8 @@
+export type Function1 = (p: any) => any;
 export type AnyFunction = (...args: Array<unknown>) => unknown;
+
+export type Parameter1<F extends Function1> = Parameters<F>[0]
+
 
 /**
  * Left-to-right function composition
@@ -305,5 +309,5 @@ export function pipe<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>
   st: (s: S) => T,
 ): T;
 export function pipe<A>(a: A, ...fns: Array<AnyFunction>) {
-  return fns.reduce((acc, fn) => fn(acc) as A, a);
+  return fns.reduce((acc, fn) => fn(acc) as A, a)
 }
