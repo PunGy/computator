@@ -1,8 +1,8 @@
-import { Either } from "./either"
-import { Fluid } from "./fluid"
-import { Parameter1, pipe } from "./function"
-import { GObject, Graphics, graphics, GraphicsMethods, GraphicsObjects, ObjectController } from "./graphics"
-import { Maybe } from "./maybe"
+import { Either } from "../either"
+import { Fluid } from "../fluid"
+import { Parameter1, pipe } from "../function"
+import { GObject, graphics, GraphicsMethods, GraphicsObjects, ObjectController } from "./graphics"
+import { Maybe } from "../maybe"
 
 type ExtendedOptions<P> = P & { id?: string | number; }
 type ExtendedObject<O extends GObject = GObject>
@@ -22,14 +22,14 @@ type CreatorFor<M extends keyof GraphicsMethods> = (
   props: ExtendedOptions<Parameter1<GraphicsMethods[M]>>,
 ) => ExtendedObject<GraphicsObjects[M]>;
 
-export type GApi = ExtendedGraphicsMethods & {
+export type GMod = ExtendedGraphicsMethods & {
   clear: () => void;
   delete: (id: string) => Maybe<ExtendedObject>;
 }
 
-export function initGApi(
+export function GMod(
   parent: HTMLDivElement,
-): Either<string, GApi> {
+): Either<string, GMod> {
   const gcanvas = new HTMLCanvasElement()
   const _widht_ = Fluid.val(parent.clientWidth)
   const _height_ = Fluid.val(parent.clientHeight)

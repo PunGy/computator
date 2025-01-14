@@ -2,8 +2,8 @@
  * Reactive system libary
  */
 
-import { NonEmptyArray } from "./array"
-import { SparseArray } from "./sparseArray"
+import { NonEmptyArray } from "../array"
+import { SparseArray } from "../sparseArray"
 
 //////////////
 // Utilities

@@ -1,7 +1,7 @@
-import { Either } from "./either"
-import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "./fluid"
-import { flow } from "./function"
-import { lazy } from "./lazy"
+import { Either } from "../either"
+import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "../fluid"
+import { flow } from "../function"
+import { lazy } from "../lazy"
 
 export interface XY {
   x: number;
