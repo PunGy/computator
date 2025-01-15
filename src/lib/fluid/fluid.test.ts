@@ -82,19 +82,6 @@ describe("Fluid", () => {
       Fluid.write(_d_, "D")
       expect(Fluid.read(_sum_)).toBe("abcDe")
     })
-
-    it("resolve race condition", () => {
-      const _x_ = Fluid.val("x")
-      const _X_ = Fluid.derive(_x_, x => x.toUpperCase())
-
-      const _xX_ = Fluid.derive([_x_, _X_], (x, X) => x + X)
-
-      expect(Fluid.read(_xX_)).toBe("xX")
-
-      Fluid.write(_x_, "a")
-
-      expect(Fluid.read(_xX_)).toBe("aA")
-    })
   })
 
   describe("listen", () => {

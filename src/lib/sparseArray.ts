@@ -16,6 +16,9 @@ export class SparseArray<V> {
   get last() {
     return this.head?.value
   }
+  get firstIndex() {
+    return this.tail?.index ?? 0
+  }
   get lastIndex() {
     return this.head?.index ?? 0
   }

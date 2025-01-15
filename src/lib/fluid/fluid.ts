@@ -16,55 +16,82 @@ const _rDerive = Symbol("r_derive")
 
 type Message = () => void;
 
-// Lower number - Highest priority
-type Priority = number | typeof priorities.lowest
+type SpecialPriority = typeof priorities.lowest | typeof priorities.highest
+// Lower number - lower priority
+type Priority = number | SpecialPriority
 
 const priorities = {
   lowest: Symbol("lowest"),
-  highest: 0,
-  before(p: ReactiveDerivation<unknown> | number | typeof this.lowest) {
-    if (p === this.lowest) {
-      console.warn("Fluid: Cannot use sole Fluid.priorities.lowest with Fluid.priorities.before! Use Fluid.derive as base or numerical value")
-      return this.lowest
+  highest: Symbol("highest"),
+  base: 0,
+  before(p: ReactiveDerivation<unknown> | number | typeof this.lowest | typeof this.highest) {
+    if (p === this.lowest || p === this.highest) {
+      console.warn("Fluid: Cannot use speical priority like lowest or highest with Fluid.priorities.before! Use Fluid.derive as base or numerical value")
+      return p
     }
     if (typeof p === "number") return p - 1
 
-    const { priority, listeners } = (p as _ReactiveDerivation<unknown>)
-    return priority === this.lowest ? listeners.lastIndex : (priority as number) - 1
+    const { priority, dependencies } = (p as _ReactiveDerivation<unknown>)
+    if (priority === this.lowest) {
+      console.warn("Fluid: Cannot use derives with lowest priority for Fluid.priorities.before! You can find 'before' only for numeric or highest")
+      return priority
+    }
+    return priority === this.highest ? dependencies.lastIndex : (priority as number) - 1
   },
-  after(p: ReactiveDerivation<unknown> | number | typeof this.lowest) {
-    if (p === this.lowest) return p
+  after(p: ReactiveDerivation<unknown> | number | typeof this.lowest | typeof this.highest) {
+    if (p === this.lowest || p === this.highest) {
+      console.warn("Fluid: Cannot use speical priority like lowest or highest with Fluid.priorities.after! Use Fluid.derive as base or numerical value")
+      return p
+    }
     if (typeof p === "number") return p + 1
 
-    const { priority, listeners } = (p as _ReactiveDerivation<unknown>)
-    return priority === this.lowest ? listeners.lastIndex : (priority as number) + 1
+    const { priority, dependencies } = (p as _ReactiveDerivation<unknown>)
+    if (priority === this.highest) {
+      console.warn("Fluid: Cannot use derives with highest priority for Fluid.priorities.after! You can find 'after' only for numeric or lowest")
+      return priority
+    }
+    return priority === this.lowest ? dependencies.firstIndex : (priority as number) + 1
   },
 }
 
 class PriorityPool extends SparseArray<Map<unknown, Message>> {
-  push(value: Map<unknown, Message>, index7?: number | typeof priorities.lowest): Map<unknown, Message> {
+  push(value: Map<unknown, Message>, index7?: Priority): Map<unknown, Message> {
     if (index7 === priorities.lowest) {
       return this.lowest = value
+    } else if (index7 === priorities.highest) {
+      return this.highest = value
     }
     return super.push(value, index7 as number)
   }
-  get(index: number | typeof priorities.lowest): Map<unknown, Message> | undefined {
+  get(index: Priority): Map<unknown, Message> | undefined {
     if (index === priorities.lowest) {
       return this.lowest
+    } else if (index === priorities.highest) {
+      return this.highest
     }
     return super.get(index as number)
   }
-  getOrMake(index: number | typeof priorities.lowest): Map<unknown, Message> {
+  getOrMake(index: Priority): Map<unknown, Message> {
     let pool = this.get(index)
     if (pool === undefined) {
       pool = new Map()
-      this.push(pool, index)
+      if (index === priorities.lowest) {
+        this.lowest = pool
+      } else if (index === priorities.highest) {
+        this.highest = pool
+      } else {
+        this.push(pool, index)
+      }
     }
     return pool
   }
   lowest: Map<unknown, Message> | undefined
+  highest: Map<unknown, Message> | undefined
 
   forEach(fn: (arg: Map<unknown, Message>, index: number) => void): void {
+    if (this.highest) {
+      fn(this.highest, -Infinity)
+    }
     super.forEach(fn)
     if (this.lowest) {
       fn(this.lowest, Infinity)
@@ -92,14 +119,14 @@ export type Reactive<V = unknown> = ReactiveValue<V> | ReactiveDerivation<V>
 
 interface _ReactiveValue<V> extends ReactiveValue<V> {
   value: V;
-  listeners: PriorityPool;
+  dependencies: PriorityPool;
 }
 
 interface _ReactiveDerivation<V> extends ReactiveDerivation<V> {
   _invalidate(): void;
   _cache: (typeof nullCache) | V;
   priority: Priority;
-  listeners: PriorityPool;
+  dependencies: PriorityPool;
   value(): V;
 }
 
@@ -118,8 +145,8 @@ function isDerive<V>(_value_: Reactive<V> | any): _value_ is _ReactiveDerivation
   return typeof _value_ === "object" && _value_ !== null && "__tag" in _value_ && _value_.__tag === _rDerive
 }
 
-const notify = (listeners: PriorityPool) => {
-  listeners.forEach((pool) => {
+const notify = (dependencies: PriorityPool) => {
+  dependencies.forEach((pool) => {
     pool.forEach(message => {
       message()
     })
@@ -128,6 +155,12 @@ const notify = (listeners: PriorityPool) => {
 
 // Utilities // Operations
 
+/**
+ * Read reactive value.
+ * Does not creates a subscription or any kind of side-effects.
+ * If it's a ReactiveValue - just returns associated value
+ * If it's a ReactiveDerivation - computes the value, if it wasn't cached
+ */
 const read = <V>(_reactive_: Reactive<V>): V => {
   if (isVal(_reactive_)) {
     return _reactive_.value
@@ -136,14 +169,23 @@ const read = <V>(_reactive_: Reactive<V>): V => {
     return _reactive_.value()
   }
 
-  throw new Error("Wrong usage of Fluid.read: non-reactive entity was passed")
+  throw new Error("Fluid: you can read only reactive entities!")
 }
 
+/**
+ * Set a new value for ReactiveValue.
+ * Does not used any kind of memoization or comparations
+ * - always writes a new value and notifies dependencies about change
+ */
 const write = <A, B>(_value_: ReactiveValue<A>, newValue: B | ((aVal: A) => B)): ReactiveValue<B> => {
+  if (_value_.__tag !== _rVal) {
+    throw new Error("Fluid: You can write only to ReactiveValue created with Fluid.val!!!")
+  }
+
   (_value_ as _ReactiveValue<B>).value = typeof newValue === "function"
     ? (newValue as ((aVal: A) => B))(read(_value_))
     : newValue
-  notify((_value_ as _ReactiveValue<B>).listeners)
+  notify((_value_ as _ReactiveValue<B>).dependencies)
   return _value_
 }
 
@@ -157,7 +199,7 @@ const write = <A, B>(_value_: ReactiveValue<A>, newValue: B | ((aVal: A) => B)):
 const val = <V>(value: V): ReactiveValue<V> => ({
   __tag: _rVal,
   value,
-  listeners: new PriorityPool(),
+  dependencies: new PriorityPool(),
 }) as _ReactiveValue<V>
 
 
@@ -193,11 +235,11 @@ function derive<V, V2>(
     __tag: _rDerive,
     _invalidate() {
       this._cache = nullCache
-      notify(this.listeners)
+      notify(this.dependencies)
     },
     _cache: nullCache,
-    priority: props?.priority ?? priorities.highest,
-    listeners: new PriorityPool(),
+    priority: props?.priority ?? priorities.base,
+    dependencies: new PriorityPool(),
     value() {
       if (this._cache !== nullCache) {
         return this._cache
@@ -213,7 +255,7 @@ function derive<V, V2>(
   }
 
   sources.forEach(source => {
-    const pool = source.listeners.getOrMake(derived.priority)
+    const pool = source.dependencies.getOrMake(derived.priority)
     pool.set(derived, derived._invalidate.bind(derived))
   })
 
@@ -250,7 +292,7 @@ function listen<V>(
 
   function unsub() {
     sources.forEach( source => {
-      const pool = source.listeners.getOrMake(props?.priority ?? priorities.highest)
+      const pool = source.dependencies.getOrMake(props?.priority ?? priorities.base)
       pool.delete(unsub)
     })
   }
@@ -259,7 +301,7 @@ function listen<V>(
     : fn(read(sources[0]))
 
   sources.forEach(source => {
-    const pool = source.listeners.getOrMake(props?.priority ?? priorities.highest)
+    const pool = source.dependencies.getOrMake(props?.priority ?? priorities.base)
     pool.set(unsub, react)
   })
 
