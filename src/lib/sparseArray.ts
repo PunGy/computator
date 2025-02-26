@@ -30,6 +30,13 @@ export class SparseArray<V> {
       node = node.next
     }
   }
+  forEachBackward(fn: (arg: V, index: number) => void) {
+    let node = this.head
+    while (node) {
+      fn(node.value, node.index)
+      node = node.previous
+    }
+  }
   reduce<B>(fn: (acc: B, arg: V, index: number) => B, initial: B) {
     let node = this.tail
     while (node) {

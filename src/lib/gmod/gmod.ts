@@ -1,5 +1,5 @@
 import { Either } from "../either"
-import { Fluid } from "../fluid"
+import { Fluid, ReactiveTransaction } from "reactive-fluid"
 import { Parameter1, pipe } from "../function"
 import { GObject, graphics, GraphicsMethods, GraphicsObjects, ObjectController } from "./graphics"
 import { Maybe } from "../maybe"
@@ -8,7 +8,7 @@ type ExtendedOptions<P> = P & { id?: string | number; }
 type ExtendedObject<O extends GObject = GObject>
                        = ObjectController<O>
                        & { data: ObjectController<O>["data"] & { id: string } }
-                       & { update: (opts: Partial<O>) => void; delete: () => void}
+                       & { update: (opts: ReactiveTransaction) => void; delete: () => void}
 
 type GraphicsFunction = { [method in keyof GraphicsMethods]: GraphicsMethods[method] }[keyof GraphicsMethods]
 
@@ -28,9 +28,9 @@ export type GMod = ExtendedGraphicsMethods & {
 }
 
 export function GMod(
-  parent: HTMLDivElement,
+  parent: HTMLElement,
 ): Either<string, GMod> {
-  const gcanvas = new HTMLCanvasElement()
+  const gcanvas = document.createElement("canvas")
   const _widht_ = Fluid.val(parent.clientWidth)
   const _height_ = Fluid.val(parent.clientHeight)
 
@@ -53,8 +53,10 @@ export function GMod(
         return (opts) => {
           const obj = objConstructor(opts) as ExtendedObject<GraphicsObjects[M]>
           obj.data.id = opts.id?.toString() ?? newID()
-          obj.update = (opts) => {
-
+          obj.update = (transaction: ReactiveTransaction) => {
+            if (Fluid.transaction.isResolved(transaction.run())) {
+              scheduleRerender()
+            }
           }
           obj.delete = () => {
             objectsEntry.delete(obj.data.id)
@@ -84,9 +86,9 @@ export function GMod(
       }
       const rerender = () => {
         g.clear()
-        Object.values(objectsEntry).forEach(obj => {
+        for (const obj of objectsEntry.values()) {
           obj.draw()
-        })
+        }
       }
 
       const clear = () => {
@@ -94,6 +96,8 @@ export function GMod(
           obj.delete()
         }
       }
+
+      parent.appendChild(gcanvas)
 
       return {
         rect,

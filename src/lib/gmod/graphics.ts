@@ -1,5 +1,5 @@
 import { Either } from "../either"
-import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "../fluid"
+import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "reactive-fluid"
 import { flow } from "../function"
 import { lazy } from "../lazy"
 
@@ -58,7 +58,7 @@ export type LineObject = Required<GObject> & {
 }
 
 export type ReactiveObject<O> = {
-  [key in keyof O]: Reactive<O[key]>
+  [key in keyof O]: ReactiveValue<O[key]>
 }
 export type ObjectController<O> = {
   data: ReactiveObject<O>;
@@ -106,9 +106,10 @@ export function graphics(
     (width, height) => {
       canvas.width = Math.floor(width * scale)
       canvas.height = Math.floor(height * scale)
-      canvas.style.width = `${_width_}px`
-      canvas.style.height = `${_height_}px`
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
     },
+    { immidiate: true },
   )
 
   // Scale/unscale pixel

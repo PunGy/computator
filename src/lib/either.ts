@@ -57,5 +57,9 @@ export const Either = {
   map,
   bind,
   sequence,
+
+  // Guards
+  isLeft,
+  isRight,
 }
 

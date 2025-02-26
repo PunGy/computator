@@ -16,7 +16,7 @@ export default [
       indent: ["error", 2],
       quotes: ["error", "double", { allowTemplateLiterals: true }],
       "jsx-quotes": [2, "prefer-double"],
-      "no-console": "warn",
+      "no-console": "off",
       "no-alert": "error",
       "array-callback-return": "error",
       "no-multi-spaces": "error",

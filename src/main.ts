@@ -1,64 +1,39 @@
-import { Fluid, ReactiveValue } from "./lib/fluid.ts"
+import "./index.css"
 
-type Item = {price: number, id: number}
-const _cartItems_: ReactiveValue<Map<number, Item>> = Fluid.val(new Map())
+import { Fluid } from "reactive-fluid"
+import { Either } from "./lib/either"
+import { expose } from "./lib/expose"
+import { pipe } from "./lib/function"
+import { GMod } from "./lib/gmod/gmod"
 
-let persistentId = 0
-const addToCart = (item: Item) => Fluid.write(_cartItems_, items => {
-  items.set(item.id, item)
-  return items
-})
+function main(): Either<string, any> {
+  const pane = document.getElementById("canvas-pane")
 
-const removeFromCart = (id: number) => Fluid.write(_cartItems_, items => {
-  items.delete(id)
-  return items
-})
+  if (!pane) return Either.left("Can't find a canvas-pane")
 
-const _totalPrice_ = Fluid.derive(
-  _cartItems_,
-  items => Array.from(items.values()).reduce((sum, item) => sum + item.price, 0),
-)
+  return pipe(
+    GMod(pane),
+    Either.map(mainGraphics => {
+      expose("mainGraphics", mainGraphics)
+      expose("Fluid", Fluid)
 
-const _discountedPrice_ = Fluid.derive(
-  _totalPrice_,
-  price => price > 100 ? price * 0.9 : price,
-)
+      const rect = mainGraphics.rect({ x: 50, y: 50, width: 100, height: 100 })
+      expose("rect", rect)
 
-const priceField = document.getElementById("priceField") as HTMLInputElement
-document.getElementById("add")?.addEventListener(
-  "click",
-  () => {
-    const price = parseInt(priceField.value, 10)
-    addToCart({ price, id: persistentId++ })
-    priceField.value = ""
-  },
-)
+      setInterval(() => {
+        rect.update(
+          Fluid.transaction.write(rect.data.x, Fluid.read(rect.data.x) + 10),
+        )
+      }, 1000)
 
-const totalPriceEl = document.getElementById("totalPrice") as HTMLSpanElement
-const discountPriceEl = document.getElementById("discountPrice") as HTMLSpanElement
-const listEl = document.getElementById("list") as HTMLDivElement
+      return true
+    }),
+  )
+}
 
-listEl.addEventListener("click", (e) => {
-  const elId = e.target?.id
-  if (elId && elId.startsWith("item")) {
-    const id = parseInt(elId.slice("item-".length), 10)
-    removeFromCart(id)
-  }
-})
+const res = main()
 
-Fluid.listen(
-  _cartItems_,
-  items => {
-    listEl.innerHTML = Array.from(items.values())
-      .reduce((acc, item) => acc += `<p id="item-${item.id}">[${item.id}]: ${item.price}</p>`, "")
-  },
-)
-Fluid.listen(
-  _totalPrice_,
-  price => totalPriceEl.innerText = price.toString(),
-)
-Fluid.listen(
-  _discountedPrice_,
-  price => discountPriceEl.innerText = price.toString(),
-)
+if (Either.isLeft(res)) {
+  console.error(res.left)
+}
 
