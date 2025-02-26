@@ -1,16 +1,14 @@
-import { Either } from "../either"
+import { Either } from "../../lib/either"
 import { Fluid, ReactiveTransaction } from "reactive-fluid"
-import { Parameter1, pipe } from "../function"
+import { Parameter1, pipe } from "../../lib/function"
 import { GObject, graphics, GraphicsMethods, GraphicsObjects, ObjectController } from "./graphics"
-import { Maybe } from "../maybe"
+import { Maybe } from "../../lib/maybe"
 
 type ExtendedOptions<P> = P & { id?: string | number; }
 type ExtendedObject<O extends GObject = GObject>
                        = ObjectController<O>
                        & { data: ObjectController<O>["data"] & { id: string } }
                        & { update: (opts: ReactiveTransaction) => void; delete: () => void}
-
-type GraphicsFunction = { [method in keyof GraphicsMethods]: GraphicsMethods[method] }[keyof GraphicsMethods]
 
 export type ExtendedGraphicsMethods = {
   [method in keyof GraphicsMethods]: (
@@ -51,6 +49,7 @@ export function GMod(
 
       const creatorFor = <M extends keyof GraphicsMethods>(objConstructor: GraphicsMethods[M]): CreatorFor<M> => {
         return (opts) => {
+          // @ts-expect-error variances of objConstructor is merged, but during usage it works
           const obj = objConstructor(opts) as ExtendedObject<GraphicsObjects[M]>
           obj.data.id = opts.id?.toString() ?? newID()
           obj.update = (transaction: ReactiveTransaction) => {

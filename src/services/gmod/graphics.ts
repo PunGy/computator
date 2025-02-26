@@ -1,7 +1,7 @@
-import { Either } from "../either"
-import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "reactive-fluid"
-import { flow } from "../function"
-import { lazy } from "../lazy"
+import { Either } from "../../lib/either"
+import { Fluid, Reactive, ReactiveValue } from "reactive-fluid"
+import { flow } from "../../lib/function"
+import { lazy } from "../../lib/lazy"
 
 export interface XY {
   x: number;
@@ -235,7 +235,7 @@ export function graphics(
 
   const getFontStyle = (fontSize: number, fontFamily: string) => `${fontSize * scale}px ${fontFamily}`
 
-  const text = (options: TextOptions): ObjectController<TextObject> & {data: { metrics: ReactiveDerivation<TextMetrics> }} => {
+  const text = (options: TextOptions): ObjectController<TextObject> => {
     const {
       x, y, value,
       fontSize = 16, fontFamily = defaultFont, color = "black",
@@ -261,6 +261,7 @@ export function graphics(
         y: Fluid.val(y),
         color: Fluid.val(color),
         relativeTo: Fluid.val(relativeTo),
+        // @ts-expect-error TODO: improve reactive types
         metrics: _metrics_,
         value: _value_,
         fontSize: _size_,
