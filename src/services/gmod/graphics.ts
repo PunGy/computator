@@ -1,5 +1,5 @@
 import { Either } from "../../lib/either"
-import { Fluid, Reactive, ReactiveValue } from "reactive-fluid"
+import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "reactive-fluid"
 import { flow } from "../../lib/function"
 import { lazy } from "../../lib/lazy"
 
@@ -8,11 +8,27 @@ export interface XY {
   y: number;
 }
 
-export interface GObjectOptions extends XY {
+export interface GObjectOptions {
+  x?: number;
+  y?: number;
   color?: string;
-  relativeTo?: "screen"|"canvas"|GObjectOptions;
+  relativeTo?: "screen"|"canvas"|GObject;
 }
-export type GObject = Required<GObjectOptions>
+export type GObject = Required<GObjectOptions> & {
+  // width of circumscribed square
+  frameX: number;
+  // height of circumscribed square
+  frameY: number;
+}
+export type GObject_R = {
+  x: ReactiveValue<GObject["x"]>;
+  y: ReactiveValue<GObject["y"]>;
+  color: ReactiveValue<GObject["color"]>;
+  relativeTo: ReactiveValue<GObject["relativeTo"]>;
+
+  frameX: ReactiveDerivation<GObject["frameX"]>;
+  frameY: ReactiveDerivation<GObject["frameY"]>;
+}
 
 export interface TextOptions extends GObjectOptions {
   value: string;
@@ -24,6 +40,12 @@ export interface TextObject extends Required<TextOptions> {
   value: string;
   metrics: TextMetrics;
 }
+export interface TextObject_R extends GObject_R {
+  value: ReactiveValue<TextObject["value"]>;
+  metrics: ReactiveDerivation<TextObject["metrics"]>;
+  fontFamily: ReactiveValue<TextObject["fontFamily"]>;
+  fontSize: ReactiveValue<TextObject["fontSize"]>;
+}
 
 export type ShapeStyle = "fill" | "stroke"
 export interface RectOptions extends GObjectOptions {
@@ -32,12 +54,21 @@ export interface RectOptions extends GObjectOptions {
   style?: ShapeStyle;
 }
 export type RectObject = Required<RectOptions>
+export interface RectObject_R extends GObject_R {
+  width: ReactiveValue<RectObject["width"]>;
+  height: ReactiveValue<RectObject["height"]>;
+  style: ReactiveValue<RectObject["style"]>;
+}
 
 export interface CircleOptions extends GObjectOptions {
   radius: number;
   style: "fill" | "stroke";
 }
 export type CircleObject = Required<CircleOptions>
+export interface CircleObject_R extends GObject_R {
+  radius: ReactiveValue<CircleObject["radius"]>;
+  style: ReactiveValue<CircleObject["style"]>;
+}
 
 export type ArrowStyle = "target" | "dot" | "none";
 
@@ -56,31 +87,35 @@ export type LineObject = Required<GObject> & {
   beginStyle: ArrowStyle;
   endStyle: ArrowStyle;
 }
-
-export type ReactiveObject<O> = {
-  [key in keyof O]: ReactiveValue<O[key]>
+export interface LineObject_R extends GObject_R {
+  x2: ReactiveValue<LineObject["x2"]>,
+  y2: ReactiveValue<LineObject["y2"]>,
+  width: ReactiveValue<LineObject["width"]>,
+  beginStyle: ReactiveValue<LineObject["beginStyle"]>,
+  endStyle: ReactiveValue<LineObject["endStyle"]>,
 }
+
 export type ObjectController<O> = {
-  data: ReactiveObject<O>;
+  data: O;
   draw(): void;
 }
 
 export interface GraphicsObjects {
-  line: LineObject,
-  rect: RectObject,
-  circle: CircleObject,
-  text: TextObject,
+  line: LineObject_R,
+  rect: RectObject_R,
+  circle: CircleObject_R,
+  text: TextObject_R,
 }
 export interface GraphicsMethods {
-  line(opts: LineOptions): ObjectController<LineObject>;
-  rect(opts: RectOptions): ObjectController<RectObject>;
-  circle(opts: CircleOptions): ObjectController<CircleObject>;
-  text(opts: TextOptions): ObjectController<TextObject>;
+  line(opts: LineOptions): ObjectController<LineObject_R>;
+  rect(opts: RectOptions): ObjectController<RectObject_R>;
+  circle(opts: CircleOptions): ObjectController<CircleObject_R>;
+  text(opts: TextOptions): ObjectController<TextObject_R>;
 }
 
 export interface Graphics extends GraphicsMethods {
   _offset_: ReactiveValue<XY>;
-  _zoom_: ReactiveValue<XY>;
+  _zoom_: ReactiveValue<number>;
   clear(): void;
 }
 
@@ -128,15 +163,6 @@ export function graphics(
     return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2))
   }
 
-  const reactiveObject = <V extends Record<string, unknown>>(obj: V): ReactiveObject<V> => {
-    return Object
-      .keys(obj)
-      .reduce((_obj_, k) => {
-        _obj_[k as keyof V] = Fluid.val(obj[k])
-        return _obj_
-      }, {} as ReactiveObject<V>)
-  }
-
   /**
    * Apply all calculations to find target XY for painting
    * If null, it means it can't be painted (e.g. out of the reach)
@@ -159,20 +185,23 @@ export function graphics(
     ctx.clearRect(0, 0, s(Fluid.read(_width_)), s(Fluid.read(_height_)))
   }
 
-  const rect = (options: RectOptions): ObjectController<RectObject> => {
+  const rect = (options: RectOptions): ObjectController<RectObject_R> => {
     const {
-      x, y, width, height,
+      x = 0, y = 0, width, height,
       color = "black", style = "fill",
       relativeTo = "canvas",
     } = options
+    const _width_ = Fluid.val(width)
+    const _height_ = Fluid.val(height)
 
     return {
-      data: reactiveObject({
-        x, y,
-        width, height,
-        color, style,
-        relativeTo,
-      }),
+      data: {
+        x: Fluid.val(x), y: Fluid.val(y),
+        width: _width_, height: _height_,
+        color: Fluid.val(color), style: Fluid.val(style),
+        relativeTo: Fluid.val(relativeTo),
+        frameX: _width_, frameY: _height_,
+      },
       draw() {
         ctx.save()
         ctx.beginPath()
@@ -196,19 +225,22 @@ export function graphics(
     }
   }
 
-  const circle = (options: CircleOptions): ObjectController<CircleObject> => {
+  const circle = (options: CircleOptions): ObjectController<CircleObject_R> => {
     const {
-      x, y, radius,
+      x = 0, y = 0, radius,
       color = "black", style = "fill",
       relativeTo = "canvas",
     } = options
+    const _r_ = Fluid.val(radius)
+    const _r2_ = Fluid.derive(_r_, r => r * 2)
 
     return {
-      data: reactiveObject({
-        x, y, radius,
-        color, style,
-        relativeTo,
-      }),
+      data: {
+        x: Fluid.val(x), y: Fluid.val(y), radius: _r_,
+        color: Fluid.val(color), style: Fluid.val(style),
+        relativeTo: Fluid.val(relativeTo),
+        frameX: _r2_, frameY: _r2_,
+      },
       draw() {
         ctx.save()
         ctx.beginPath()
@@ -235,9 +267,9 @@ export function graphics(
 
   const getFontStyle = (fontSize: number, fontFamily: string) => `${fontSize * scale}px ${fontFamily}`
 
-  const text = (options: TextOptions): ObjectController<TextObject> => {
+  const text = (options: TextOptions): ObjectController<TextObject_R> => {
     const {
-      x, y, value,
+      x = 0, y = 0, value,
       fontSize = 16, fontFamily = defaultFont, color = "black",
       relativeTo = "canvas",
     } = options
@@ -254,18 +286,23 @@ export function graphics(
 
       return metrics
     })
+    const _frame_ = Fluid.derive(_metrics_, metrics => {
+      return {
+        x: metrics.width,
+        y: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+      }
+    })
 
     return {
       data: {
-        x: Fluid.val(x),
-        y: Fluid.val(y),
+        x: Fluid.val(x), y: Fluid.val(y),
         color: Fluid.val(color),
         relativeTo: Fluid.val(relativeTo),
-        // @ts-expect-error TODO: improve reactive types
         metrics: _metrics_,
         value: _value_,
-        fontSize: _size_,
-        fontFamily: _family_,
+        fontSize: _size_, fontFamily: _family_,
+        frameX: Fluid.derive(_frame_, f => f.x),
+        frameY: Fluid.derive(_frame_, f => f.y),
       },
       draw() {
         ctx.save()
@@ -296,23 +333,26 @@ export function graphics(
     ctx.stroke()
   }
 
-  const line = (options: LineOptions): ObjectController<LineObject> => {
+  const line = (options: LineOptions): ObjectController<LineObject_R> => {
     const {
       from, to,
       beginStyle = "none", endStyle = "none",
       width = 2, color = "black", relativeTo = "canvas",
     } = options
+    // TODO: frame calculation for a line
+    const frame = Fluid.val(0)
 
     return {
-      data: reactiveObject({
-        x: from.x, y: from.y,
-        x2: to.x, y2: to.y,
-        color,
-        width,
-        relativeTo,
-        beginStyle,
-        endStyle,
-      }),
+      data: {
+        x: Fluid.val(from.x), y: Fluid.val(from.y),
+        x2: Fluid.val(to.x), y2: Fluid.val(to.y),
+        color: Fluid.val(color),
+        width: Fluid.val(width),
+        relativeTo: Fluid.val(relativeTo),
+        beginStyle: Fluid.val(beginStyle),
+        endStyle: Fluid.val(endStyle),
+        frameX: frame, frameY: frame,
+      },
       draw() {
         const { data } = this
         const [{ x: x1, y: y1 }, { x: x2, y: y2 }] = [
@@ -368,7 +408,6 @@ export function graphics(
     line,
 
     clear,
-
   })
 }
 

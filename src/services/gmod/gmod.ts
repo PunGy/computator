@@ -1,12 +1,12 @@
 import { Either } from "../../lib/either"
 import { Fluid, ReactiveTransaction } from "reactive-fluid"
 import { Parameter1, pipe } from "../../lib/function"
-import { GObject, graphics, GraphicsMethods, GraphicsObjects, ObjectController } from "./graphics"
+import { CircleObject, CircleObject_R, GObject, GObject_R, graphics, GraphicsMethods, GraphicsObjects, LineObject, LineObject_R, ObjectController, RectObject, RectObject_R } from "./graphics"
 import { Maybe } from "../../lib/maybe"
 
 type ExtendedOptions<P> = P & { id?: string | number; }
-type ExtendedObject<O extends GObject = GObject>
-                       = ObjectController<O>
+type ExtendedObject<O extends GObject_R = GObject_R>
+                       = Omit<ObjectController<O>, "draw">
                        & { data: ObjectController<O>["data"] & { id: string } }
                        & { update: (opts: ReactiveTransaction) => void; delete: () => void}
 
@@ -20,10 +20,22 @@ type CreatorFor<M extends keyof GraphicsMethods> = (
   props: ExtendedOptions<Parameter1<GraphicsMethods[M]>>,
 ) => ExtendedObject<GraphicsObjects[M]>;
 
-export type GMod = ExtendedGraphicsMethods & {
-  clear: () => void;
-  delete: (id: string) => Maybe<ExtendedObject>;
+export interface GMod {
+  objects: ExtendedGraphicsMethods & {
+    box: CreatorFor<"rect">;
+
+    clear: () => void;
+    delete: (id: string) => Maybe<ExtendedObject>;
+    get: (id: string) => Maybe<ExtendedObject>;
+  };
+
+  graphics: GraphicsMethods;
 }
+
+export type SceneObject = ExtendedObject<GObject_R>
+export type Rect = ExtendedObject<RectObject_R>
+export type Circle = ExtendedObject<CircleObject_R>
+export type Line = ExtendedObject<LineObject_R>
 
 export function GMod(
   parent: HTMLElement,
@@ -38,14 +50,18 @@ export function GMod(
       _widht_,
       _height_,
     ),
-    Either.map(g => ({ g })),
-    Either.map(({ g }) => {
+    Either.map(g => {
       let persistentIDs = 0
       const newID = () => (persistentIDs++).toString()
 
-      const objectsEntry = new Map<string, ExtendedObject<GObject>>()
+      const objectsEntry = new Map<string, SceneObject>()
+      const visibleObjects: Set<SceneObject & { draw(): void }> = new Set()
 
       let scheduled = false
+
+      function canRender<O extends ExtendedObject>(obj: O): obj is O & { draw(): void } {
+        return "draw" in obj
+      }
 
       const creatorFor = <M extends keyof GraphicsMethods>(objConstructor: GraphicsMethods[M]): CreatorFor<M> => {
         return (opts) => {
@@ -63,6 +79,10 @@ export function GMod(
           }
 
           objectsEntry.set(obj.data.id, obj)
+          if (canRender(obj)) {
+
+            visibleObjects.add(obj)
+          }
 
           scheduleRerender()
           return obj
@@ -74,6 +94,15 @@ export function GMod(
       const line = creatorFor<"line">(g.line)
       const text = creatorFor<"text">(g.text)
 
+      const box = creatorFor<"rect">((opts) => {
+        const obj = g.rect(opts)
+
+        // @ts-expect-error we don't need it anymore
+        delete obj.draw
+
+        return obj
+      })
+
       const scheduleRerender = () => {
         if (!scheduled) {
           window.requestAnimationFrame(() => {
@@ -83,15 +112,16 @@ export function GMod(
           scheduled = true
         }
       }
+
       const rerender = () => {
         g.clear()
-        for (const obj of objectsEntry.values()) {
+        for (const obj of visibleObjects.values()) {
           obj.draw()
         }
       }
 
       const clear = () => {
-        for (const obj of objectsEntry.values()) {
+        for (const obj of visibleObjects.values()) {
           obj.delete()
         }
       }
@@ -99,20 +129,28 @@ export function GMod(
       parent.appendChild(gcanvas)
 
       return {
-        rect,
-        circle,
-        line,
-        text,
+        objects: {
+          rect,
+          circle,
+          line,
+          text,
 
-        clear,
-        delete(id) {
-          const obj = objectsEntry.get(id)
-          if (obj) {
-            obj.delete()
-            return Maybe.some(obj)
-          }
-          return Maybe.none
+          box,
+          clear,
+          get(id) {
+            return Maybe.fromNullable(objectsEntry.get(id))
+          },
+          delete(id) {
+            const obj = objectsEntry.get(id)
+            if (obj) {
+              obj.delete()
+              return Maybe.some(obj)
+            }
+            return Maybe.none
+          },
         },
+
+        graphics: g,
       }
     }),
   )

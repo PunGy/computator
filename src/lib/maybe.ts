@@ -19,8 +19,20 @@ const none: None = {
   __tag: _none,
 }
 
+const fromNullable = <V>(value: V):
+  V extends null
+  ? None
+  : V extends undefined
+    ? None
+    : Some<NonNullable<V>> => {
+  // @ts-expect-error another bullshit
+  return value == null ? none : some(value)
+}
+
 export const Maybe = {
   some,
   none,
+
+  fromNullable,
 }
 

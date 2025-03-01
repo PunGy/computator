@@ -25,6 +25,6 @@
   },
   "dependencies": {
     "modern-normalize": "^3.0.1",
-    "reactive-fluid": "^0.1.0"
+    "reactive-fluid": "^0.1.1"
   }
 }
