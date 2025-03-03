@@ -17,6 +17,7 @@ Supported data structures:
 ## To be done
 
 - Data Structures: Array, Tree
+- Animations
 - Visualizing:
   1. Math visualization
   2. Lisp-like language visualization
