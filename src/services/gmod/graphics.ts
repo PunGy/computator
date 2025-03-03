@@ -2,6 +2,7 @@ import { Either } from "../../lib/either"
 import { Fluid, Reactive, ReactiveDerivation, ReactiveValue } from "reactive-fluid"
 import { flow } from "../../lib/function"
 import { lazy } from "../../lib/lazy"
+import { vectorDistance } from "../../lib/vector"
 
 export interface XY {
   x: number;
@@ -12,9 +13,11 @@ export interface GObjectOptions {
   x?: number;
   y?: number;
   color?: string;
-  relativeTo?: "screen"|"canvas"|GObject;
+  relativeTo?: "screen"|"canvas"|GObject_R;
 }
 export type GObject = Required<GObjectOptions> & {
+  //absX: number,
+  //absY: number,
   // width of circumscribed square
   frameX: number;
   // height of circumscribed square
@@ -23,6 +26,8 @@ export type GObject = Required<GObjectOptions> & {
 export type GObject_R = {
   x: ReactiveValue<GObject["x"]>;
   y: ReactiveValue<GObject["y"]>;
+  //absX: ReactiveDerivation<GObject["absX"]>;
+  //absY: ReactiveDerivation<GObject["absY"]>;
   color: ReactiveValue<GObject["color"]>;
   relativeTo: ReactiveValue<GObject["relativeTo"]>;
 
@@ -37,10 +42,13 @@ export interface TextOptions extends GObjectOptions {
   fontSize?: number;
 }
 export interface TextObject extends Required<TextOptions> {
+  bottomY: number;
   value: string;
+  // NOTE: values inside of metrics is scaled
   metrics: TextMetrics;
 }
 export interface TextObject_R extends GObject_R {
+  bottomY: ReactiveDerivation<TextObject["bottomY"]>;
   value: ReactiveValue<TextObject["value"]>;
   metrics: ReactiveDerivation<TextObject["metrics"]>;
   fontFamily: ReactiveValue<TextObject["fontFamily"]>;
@@ -62,10 +70,16 @@ export interface RectObject_R extends GObject_R {
 
 export interface CircleOptions extends GObjectOptions {
   radius: number;
-  style: "fill" | "stroke";
+  // width of the strokeLine
+  width?: number;
+  style?: "fill" | "stroke";
 }
 export type CircleObject = Required<CircleOptions>
 export interface CircleObject_R extends GObject_R {
+  // x0 and y0 - center of the circle
+  x0: ReactiveDerivation<GObject["x"]>
+  y0: ReactiveDerivation<GObject["y"]>
+  width: ReactiveValue<CircleObject["width"]> ;
   radius: ReactiveValue<CircleObject["radius"]>;
   style: ReactiveValue<CircleObject["style"]>;
 }
@@ -159,10 +173,6 @@ export function graphics(
   const sfx = flow(fx, s)
   const sfy = flow(fy, s)
 
-  function vectorDistance(x1: number, y1: number, x2: number, y2: number) {
-    return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2))
-  }
-
   /**
    * Apply all calculations to find target XY for painting
    * If null, it means it can't be painted (e.g. out of the reach)
@@ -176,8 +186,8 @@ export function graphics(
     }
 
     return {
-      x: s(x + relativeTo.x),
-      y: s(y + relativeTo.y),
+      x: s(x + Fluid.read(relativeTo.x)),
+      y: s(y + Fluid.read(relativeTo.y)),
     }
   }
 
@@ -228,15 +238,22 @@ export function graphics(
   const circle = (options: CircleOptions): ObjectController<CircleObject_R> => {
     const {
       x = 0, y = 0, radius,
-      color = "black", style = "fill",
+      width = 1, color = "black", style = "fill",
       relativeTo = "canvas",
     } = options
     const _r_ = Fluid.val(radius)
     const _r2_ = Fluid.derive(_r_, r => r * 2)
 
+    const _x_ = Fluid.val(x)
+    const _y_ = Fluid.val(y)
+
+    const _x0_ = Fluid.derive([_x_, _r_], (x, r) => x + r)
+    const _y0_ = Fluid.derive([_y_, _r_], (y, r) => y + r)
+
     return {
       data: {
-        x: Fluid.val(x), y: Fluid.val(y), radius: _r_,
+        x: _x_, y: _y_, x0: _x0_, y0: _y0_, radius: _r_,
+        width: Fluid.val(width),
         color: Fluid.val(color), style: Fluid.val(style),
         relativeTo: Fluid.val(relativeTo),
         frameX: _r2_, frameY: _r2_,
@@ -245,8 +262,8 @@ export function graphics(
         ctx.save()
         ctx.beginPath()
         const xy = getCanvasXY({
-          x: Fluid.read(this.data.x),
-          y: Fluid.read(this.data.y),
+          x: Fluid.read(this.data.x0),
+          y: Fluid.read(this.data.y0),
           relativeTo: Fluid.read(this.data.relativeTo),
         })
         ctx.arc(
@@ -256,6 +273,7 @@ export function graphics(
           ctx.fillStyle = color
           ctx.fill()
         } else {
+          ctx.lineWidth = Fluid.read(this.data.width)
           ctx.strokeStyle = color
           ctx.stroke()
         }
@@ -288,14 +306,17 @@ export function graphics(
     })
     const _frame_ = Fluid.derive(_metrics_, metrics => {
       return {
-        x: metrics.width,
-        y: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+        x: us(metrics.width),
+        y: us(metrics.actualBoundingBoxAscent),
       }
     })
+    const _y_ = Fluid.val(y)
+    const _bottomY_ = Fluid.derive([_frame_, _y_], (frame, y) => frame.y + y)
 
     return {
       data: {
-        x: Fluid.val(x), y: Fluid.val(y),
+        x: Fluid.val(x), y: _y_,
+        bottomY: _bottomY_,
         color: Fluid.val(color),
         relativeTo: Fluid.val(relativeTo),
         metrics: _metrics_,
@@ -310,7 +331,7 @@ export function graphics(
         ctx.font = Fluid.read(_font_)
         const xy = getCanvasXY({
           x: Fluid.read(this.data.x),
-          y: Fluid.read(this.data.y),
+          y: Fluid.read(this.data.bottomY),
           relativeTo: Fluid.read(this.data.relativeTo),
         })
         ctx.fillText(value, xy.x, xy.y)

@@ -1,8 +1,19 @@
 import { Either } from "../../lib/either"
 import { Fluid, ReactiveTransaction } from "reactive-fluid"
 import { Parameter1, pipe } from "../../lib/function"
-import { CircleObject, CircleObject_R, GObject, GObject_R, graphics, GraphicsMethods, GraphicsObjects, LineObject, LineObject_R, ObjectController, RectObject, RectObject_R } from "./graphics"
+import {
+  graphics,
+  CircleObject_R,
+  GObject_R,
+  GraphicsMethods,
+  GraphicsObjects,
+  LineObject_R,
+  ObjectController,
+  RectObject_R,
+  LineOptions,
+} from "./graphics"
 import { Maybe } from "../../lib/maybe"
+import { vectorDistance, vectorDistance2 } from "../../lib/vector"
 
 type ExtendedOptions<P> = P & { id?: string | number; }
 type ExtendedObject<O extends GObject_R = GObject_R>
@@ -23,6 +34,7 @@ type CreatorFor<M extends keyof GraphicsMethods> = (
 export interface GMod {
   objects: ExtendedGraphicsMethods & {
     box: CreatorFor<"rect">;
+    connect: (obj1: Circle, obj2: Circle, lineOpts?: Omit<LineOptions, "from" | "to">) => ExtendedObject<LineObject_R>;
 
     clear: () => void;
     delete: (id: string) => Maybe<ExtendedObject>;
@@ -63,29 +75,37 @@ export function GMod(
         return "draw" in obj
       }
 
-      const creatorFor = <M extends keyof GraphicsMethods>(objConstructor: GraphicsMethods[M]): CreatorFor<M> => {
-        return (opts) => {
-          // @ts-expect-error variances of objConstructor is merged, but during usage it works
-          const obj = objConstructor(opts) as ExtendedObject<GraphicsObjects[M]>
-          obj.data.id = opts.id?.toString() ?? newID()
-          obj.update = (transaction: ReactiveTransaction) => {
-            if (Fluid.transaction.isResolved(transaction.run())) {
-              scheduleRerender()
-            }
-          }
-          obj.delete = () => {
-            objectsEntry.delete(obj.data.id)
+      const makeSceneObject = <T extends GObject_R>(obj: ObjectController<T>, id?: string | number): ExtendedObject<T> => {
+        const sceneObject = obj as unknown as ExtendedObject<T>
+
+        sceneObject.data.id = id?.toString() ?? newID()
+        sceneObject.update = (transaction: ReactiveTransaction) => {
+          if (Fluid.transaction.isResolved(transaction.run())) {
             scheduleRerender()
           }
-
-          objectsEntry.set(obj.data.id, obj)
-          if (canRender(obj)) {
-
-            visibleObjects.add(obj)
-          }
-
+        }
+        sceneObject.delete = () => {
+          objectsEntry.delete(sceneObject.data.id)
           scheduleRerender()
-          return obj
+        }
+
+        objectsEntry.set(sceneObject.data.id, sceneObject)
+        if (canRender(sceneObject)) {
+
+          visibleObjects.add(sceneObject)
+        }
+
+        scheduleRerender()
+        return sceneObject
+      }
+
+      const creatorFor = <M extends keyof GraphicsMethods>(objConstructor: GraphicsMethods[M]): CreatorFor<M> => {
+        // @ts-expect-error TS is just being obnoxious again
+        return (opts) => {
+          // @ts-expect-error TS is just being obnoxious again
+          const obj = objConstructor(opts)
+          // @ts-expect-error TS is just being obnoxious again
+          return makeSceneObject(obj)
         }
       }
 
@@ -103,6 +123,40 @@ export function GMod(
         return obj
       })
 
+      const connect = (obj1: Circle, obj2: Circle, lineOpts: Omit<LineOptions, "from" | "to"> = {}): ExtendedObject<LineObject_R> => {
+        const r_c1 = Fluid.read(obj1.data.radius)
+        const x_c1 = Fluid.read(obj1.data.x0)
+        const y_c1 = Fluid.read(obj1.data.y0)
+
+        const r_c2 = Fluid.read(obj2.data.radius)
+        const x_c2 = Fluid.read(obj2.data.x0)
+        const y_c2 = Fluid.read(obj2.data.y0)
+
+        const dx = x_c2 - x_c1
+        const dy = y_c2 - y_c1
+        const distance = vectorDistance2(dx, dy)
+        const ux = dx / distance
+        const uy = dy / distance
+
+        const from = {
+          x: x_c1 + r_c1 * ux,
+          y: y_c1 + r_c1 * uy,
+        }
+        const to = {
+          x: x_c2 - r_c2 * ux,
+          y: y_c2 - r_c2 * uy,
+        }
+
+        return makeSceneObject(g.line({
+          from,
+          to,
+          endStyle: "target",
+          relativeTo: Fluid.read(obj1.data.relativeTo),
+          ...lineOpts,
+        }))
+      }
+
+
       const scheduleRerender = () => {
         if (!scheduled) {
           window.requestAnimationFrame(() => {
@@ -110,6 +164,12 @@ export function GMod(
             scheduled = false
           })
           scheduled = true
+        }
+      }
+
+      const update = (transaction: ReactiveTransaction) => {
+        if (Fluid.transaction.isResolved(transaction.run())) {
+          scheduleRerender()
         }
       }
 
@@ -134,6 +194,7 @@ export function GMod(
           circle,
           line,
           text,
+          connect,
 
           box,
           clear,
@@ -151,6 +212,7 @@ export function GMod(
         },
 
         graphics: g,
+        update,
       }
     }),
   )
