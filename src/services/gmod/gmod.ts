@@ -13,7 +13,7 @@ import {
   LineOptions,
 } from "./graphics"
 import { Maybe } from "../../lib/maybe"
-import { vectorDistance, vectorDistance2 } from "../../lib/vector"
+import { vectorDistance2 } from "../../lib/vector"
 
 type ExtendedOptions<P> = P & { id?: string | number; }
 type ExtendedObject<O extends GObject_R = GObject_R>
